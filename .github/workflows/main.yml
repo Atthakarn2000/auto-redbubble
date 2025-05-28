@@ -1,9 +1,8 @@
-# .github/workflows/main.yml
 name: Auto Redbubble Upload
 
 on:
   workflow_dispatch:
-
+  
 jobs:
   upload:
     runs-on: ubuntu-latest

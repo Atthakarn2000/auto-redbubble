@@ -1,3 +1,5 @@
-requests
-playwright
-Pillow
+openai                   # สำหรับ DALL·E
+requests                 # โหลดรูปจาก URL
+Pillow                   # จัดการภาพ
+playwright               # ควบคุม browser
+huggingface-hub          # เรียก Inference API ของ HF upscaler

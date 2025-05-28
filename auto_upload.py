@@ -1,121 +1,78 @@
-#!/usr/bin/env python3
-import os, time, uuid, logging
-from io import BytesIO
-
-import openai
+import os
+import time
+import uuid
 import requests
+from io import BytesIO
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-# ─── CONFIG ────────────────────────────────────────────────────────────────────
-# สิ่งที่ต้องตั้งเป็น ENV ก่อนรัน:
-#   OPENAI_API_KEY  – คีย์ OpenAI DALL·E
-#   RB_EMAIL        – อีเมล Redbubble
-#   RB_PASS         – รหัสผ่าน Redbubble
+# ─ CONFIG ─────────────────────────────────────────────────────────────────────────
 
-# บังคับใช้ OpenAI.com API (ไม่เอา Azure)
-openai.api_type  = "openai"
-openai.api_base  = "https://api.openai.com/v1"
-openai.api_key   = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    raise RuntimeError("❌ No OPENAI_API_KEY in env")
+HF_TOKEN = os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    raise RuntimeError("❌ No HF_TOKEN env found")
 
 RB_EMAIL = os.getenv("RB_EMAIL")
 RB_PASS  = os.getenv("RB_PASS")
-if not (RB_EMAIL and RB_PASS):
-    raise RuntimeError("❌ Please set RB_EMAIL and RB_PASS in env")
+if not RB_EMAIL or not RB_PASS:
+    raise RuntimeError("❌ No Redbubble credentials env found")
 
-# ขนาดต้นทาง DALL·E และขนาดภาพปลายทางสำหรับ Redbubble
-DALL_SIZE     = "1024x1024"
-TARGET_W, TARGET_H = 4500, 5400
-PROMPT        = "Minimalist cartoon cat T-shirt design, flat style, transparent background"
+PROMPT = "Minimalist cartoon cat T-shirt design, flat style, transparent background"
 
-# เปิด logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# ─ IMAGE GENERATION (Hugging Face) ────────────────────────────────────────────────
 
+def gen_images_hf(prompt, n=1):
+    url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Accept": "application/octet-stream"
+    }
+    images = []
+    for _ in range(n):
+        resp = requests.post(url, headers=headers, json={"inputs": prompt})
+        resp.raise_for_status()
+        img = Image.open(BytesIO(resp.content)).convert("RGBA")
+        images.append(img)
+    return images
 
-def gen_and_upscale(prompt: str, n: int = 1):
-    logging.info(f"▶️ Generating {n} image(s) at {DALL_SIZE} via DALL·E…")
-    try:
-        resp = openai.Image.create(
-            prompt=prompt,
-            n=n,
-            size=DALL_SIZE,
-            response_format="url"
-        )
-    except openai.error.OpenAIError as e:
-        raise RuntimeError(f"🔥 OpenAI API error: {e}") from e
+# ─ REDBUBBLE UPLOAD ───────────────────────────────────────────────────────────────
 
-    imgs = []
-    for item in resp.get("data", []):
-        url = item.get("url")
-        if not url:
-            raise RuntimeError("⚠️ DALL·E returned no URL")
-        r = requests.get(url); r.raise_for_status()
-        img = Image.open(BytesIO(r.content)).convert("RGBA")
-
-        # letterbox ให้เต็ม canvas 4500×5400
-        ratio = min(TARGET_W/img.width, TARGET_H/img.height)
-        nw, nh = int(img.width*ratio), int(img.height*ratio)
-        img2 = img.resize((nw, nh), Image.LANCZOS)
-        canvas = Image.new("RGBA", (TARGET_W, TARGET_H), (0,0,0,0))
-        canvas.paste(img2, ((TARGET_W-nw)//2, (TARGET_H-nh)//2), img2)
-        imgs.append(canvas)
-
-    logging.info(f"✅ Generated & upscaled {len(imgs)} image(s).")
-    return imgs
-
-
-def login_rb(page):
-    logging.info("🔐 Logging in to Redbubble…")
-    page.goto("https://www.redbubble.com/auth/login/traditional")
-    page.fill('input[name="username"]', RB_EMAIL)
-    page.fill('input[name="password"]', RB_PASS)
-    page.click('button[type="submit"]')
-    page.wait_for_selector("header[aria-label='Redbubble']")
-
-
-def upload_rb(page, img: Image.Image, title: str, desc: str, tags: list[str]):
-    uid = uuid.uuid4().hex[:8]
-    fn  = f"design_{uid}.png"
-    logging.info(f"📤 Uploading {fn}…")
-    buf = BytesIO()
-    img.save(buf, "PNG"); buf.seek(0)
-
-    page.goto("https://www.redbubble.com/portfolio/images/upload")
-    page.query_selector('input[type="file"]').set_input_files(
-        {"name": fn, "mimeType":"image/png", "buffer":buf.getvalue()}
-    )
-    page.wait_for_selector('input[name="title"]')
-    page.fill('input[name="title"]', title)
-    page.fill('textarea[name="description"]', desc)
-    page.fill('input[name="tags"]', ",".join(tags))
-    page.click('button[type="submit"]')
-    page.wait_for_selector("a[href*='/work/']")
-    url = page.query_selector("a[href*='/work/']").get_attribute("href")
-    logging.info(f"✅ Uploaded! {url}")
-    return url
-
-
-def main():
-    logging.info("🚀 Starting auto-upload workflow")
-    images = gen_and_upscale(PROMPT, n=1)
-
+def upload_to_redbubble(image: Image, title: str):
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        page    = browser.new_page()
+        page = browser.new_page()
+        page.goto("https://www.redbubble.com/auth/login")
+        page.fill('input[type="email"]', RB_EMAIL)
+        page.fill('input[type="password"]', RB_PASS)
+        page.click('button[type="submit"]')
+        page.wait_for_url("**/dashboard")  # รอ login เสร็จ
 
-        login_rb(page)
-        for i, img in enumerate(images, 1):
-            title = f"AI Cat #{i}"
-            desc  = "Flat minimalist cat on transparent background"
-            tags  = ["cat","minimalist","AI","tshirt"]
-            upload_rb(page, img, title, desc, tags)
+        page.goto("https://www.redbubble.com/portfolio/images/upload")
+        # อัปโหลดไฟล์ภาพ
+        img_path = f"/tmp/{uuid.uuid4().hex}.png"
+        image.save(img_path)
+        page.set_input_files('input[type="file"]', img_path)
 
+        # ใส่ title และ description เพิ่มเติมตามต้องการ
+        page.fill('input[name="title"]', title)
+        page.click('button:has-text("Save")')
+        page.wait_for_timeout(3000)  # รอ upload เสร็จ
+
+        new_url = page.url
         browser.close()
+        return new_url
 
-    logging.info("🎉 All done!")
+# ─ MAIN ───────────────────────────────────────────────────────────────────────────
 
+def main():
+    print("🚀 Starting auto-upload workflow")
+    images = gen_images_hf(PROMPT, n=1)
+
+    for img in images:
+        unique_title = f"AI Cat {int(time.time())}"
+        print(f"🔗 Uploading `{unique_title}` to Redbubble…")
+        url = upload_to_redbubble(img, unique_title)
+        print("✅ Uploaded at:", url)
 
 if __name__ == "__main__":
     main()

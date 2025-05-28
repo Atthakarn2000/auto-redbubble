@@ -1,32 +1,28 @@
-name: Auto Upload Artwork
+name: Auto Redbubble Upload
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  run_script:
+  upload:
     runs-on: ubuntu-latest
-    env:
-      DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
-      RB_EMAIL: ${{ secrets.RB_EMAIL }}
-      RB_PASS: ${{ secrets.RB_PASS }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
           playwright install --with-deps
 
-      - name: Run auto_upload.py
+      - name: Auto-upload script
+        env:
+          DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
+          RB_EMAIL:        ${{ secrets.RB_EMAIL }}
+          RB_PASS:         ${{ secrets.RB_PASS }}
         run: python auto_upload.py
-

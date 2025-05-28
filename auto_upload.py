@@ -18,11 +18,10 @@ DESIGN_FOLDER.mkdir(exist_ok=True)
 
 def generate_images(prompt, num_images=1):
     """
-    สร้างภาพด้วย Replicate API โดยใช้ Stable Diffusion พร้อมดาวน์โหลดภาพ
+    สร้างภาพ AI ผ่าน Replicate พร้อมดาวน์โหลดไปยังเครื่อง
     """
-    # ระบุโมเดลให้ถูกต้องโดยใส่ version id ด้วย
-    # ตรวจสอบ version id ใน Replicate แล้วเปลี่ยน "<VERSION_ID>" ให้ถูกต้อง
-    model = "stability-ai/stable-diffusion:dd0eae1a0e7f00fcd4b1b62ecd6ff501d99f60b1727429e7060e4f9d1f07a71f"
+    # แก้ไขส่วนนี้: เปลี่ยน <VALID_VERSION_ID> เป็น version id ที่ถูกต้อง
+    model = "stability-ai/stable-diffusion:<VALID_VERSION_ID>"
     params = {
         "prompt": prompt,
         "width": 512,
@@ -32,7 +31,6 @@ def generate_images(prompt, num_images=1):
     
     try:
         client = replicate.Client(api_token=REPLICATE_API_TOKEN)
-        # เรียกใช้งานโมเดลโดยส่งพารามิเตอร์เข้าไป
         output_urls = client.run(model, input=params)
         
         image_paths = []
@@ -57,7 +55,7 @@ def generate_images(prompt, num_images=1):
 
 def upload_to_redbubble(image_paths):
     """
-    อัปโหลดภาพไปยัง Redbubble ผ่าน Playwright ด้วยการจำลองเบราว์เซอร์
+    อัปโหลดภาพไปยัง Redbubble ผ่าน Playwright
     """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -90,7 +88,7 @@ def main():
     if image_paths:
         upload_to_redbubble(image_paths)
     else:
-        print("ไม่สามารถสร้างภาพได้")
+        print("Error: ไม่สามารถสร้างภาพได้")
         exit(1)
 
 if __name__ == "__main__":

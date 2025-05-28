@@ -5,99 +5,91 @@ import requests
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# ตั้งค่า API Key จาก DeepAI (โปรดตรวจสอบว่าคีย์นี้เป็นของคุณจริง)
-DEEPAI_API_KEY = "2bf13735-62a2-49c9-82e4-062d0115aca6"
+# ——— CONFIGURATION ———
+DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
+RB_EMAIL        = os.getenv("RB_EMAIL")
+RB_PASS         = os.getenv("RB_PASS")
 
-# สำหรับบัญชี Redbubble ให้ตั้งค่าข้อมูลของคุณลงไป (หรือสามารถนำมาใช้ environment variables ได้)
-RB_EMAIL = os.getenv("RB_EMAIL") or "your_redbubble_email@example.com"
-RB_PASS  = os.getenv("RB_PASS")  or "your_redbubble_password"
+if not DEEPAI_API_KEY:
+    raise RuntimeError("❌ No DEEPAI_API_KEY env var found")
+if not RB_EMAIL or not RB_PASS:
+    raise RuntimeError("❌ RB_EMAIL and RB_PASS must be set in env")
 
-# ค่าคงที่สำหรับงานอัปโหลด
-UPLOAD_TITLE = "AI-Generated Artwork"
-DESIGN_FOLDER = Path("designs")
-DESIGN_FOLDER.mkdir(exist_ok=True)
+PROMPTS = [
+    "Minimalist cartoon cat T-shirt design, flat style, transparent background"
+]
+DESIGN_DIR = Path("designs")
+DESIGN_DIR.mkdir(exist_ok=True)
 
-def generate_images(prompt, num_images=1):
-    """
-    สร้างภาพโดยใช้ DeepAI Text-to-Image API
-    แล้วดาวน์โหลดและบันทึกไฟล์ภาพในโฟลเดอร์ 'designs/'
-    """
-    api_url = "https://api.deepai.org/api/text2img"
-    # เปลี่ยนชื่อ header ให้ถูกต้องเป็น "Api-Key"
-    headers = {"Api-Key": DEEPAI_API_KEY}
-    
-    image_paths = []
-    
-    for i in range(num_images):
-        data = {"text": prompt}
-        print("กำลังส่งคำขอสร้างภาพไปยัง DeepAI ...")
-        response = requests.post(api_url, data=data, headers=headers)
-        
-        if response.status_code != 200:
-            print(f"Error generating image: {response.status_code} {response.text}")
-            exit(1)
-        
-        result = response.json()
-        image_url = result.get("output_url")
-        if not image_url:
-            print("Error: ไม่พบข้อมูล output_url ในผลลัพธ์")
-            exit(1)
-        
-        # ดาวน์โหลดภาพจาก URL ที่ได้
-        img_response = requests.get(image_url)
-        img_response.raise_for_status()
-        
-        image_uuid = f"{uuid.uuid4()}.png"
-        image_path = DESIGN_FOLDER / image_uuid
-        
-        with open(image_path, "wb") as img_file:
-            img_file.write(img_response.content)
-        
-        image_paths.append(str(image_path))
-        print(f"ดาวน์โหลดภาพสำเร็จ: {image_path}")
-        
-        # รอเล็กน้อยก่อนทำงานในรอบต่อไป (ถ้ามี)
+# ——— IMAGE GENERATION VIA DeepAI ———
+def generate_images_deepai(prompt: str, n: int = 1) -> list[Path]:
+    urls = []
+    for i in range(n):
+        print(f"🖼️  Generating image {i+1}/{n} for prompt `{prompt}`…")
+        resp = requests.post(
+            "https://api.deepai.org/api/text2img",
+            data={"text": prompt},
+            headers={"api-key": DEEPAI_API_KEY},
+            timeout=120
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"DeepAI error ({resp.status_code}): {resp.text}")
+        output_url = resp.json().get("output_url")
+        if not output_url:
+            raise RuntimeError("DeepAI did not return output_url")
+        # download
+        r2 = requests.get(output_url, timeout=120)
+        r2.raise_for_status()
+        filename = DESIGN_DIR / f"{uuid.uuid4()}.png"
+        with open(filename, "wb") as f:
+            f.write(r2.content)
+        print(f"✅ Saved to {filename}")
+        urls.append(filename)
         time.sleep(1)
-    
-    return image_paths
+    return urls
 
-def upload_to_redbubble(image_paths):
-    """
-    อัปโหลดภาพไปยัง Redbubble โดยใช้ Playwright จำลองเบราว์เซอร์
-    """
+# ——— PLAYWRIGHT REDBUBBLE UPLOAD ———
+def upload_to_redbubble(image_paths: list[Path]):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        
-        print("เข้าสู่ระบบ Redbubble...")
+        # 1) Login
         page.goto("https://www.redbubble.com/auth/login")
-        page.fill('input[name="email"]', RB_EMAIL)
+        page.fill('input[name="username"]', RB_EMAIL)
         page.fill('input[name="password"]', RB_PASS)
         page.click('button[type="submit"]')
-        page.wait_for_selector('text=Dashboard', timeout=10000)
-        
+        page.wait_for_url("https://www.redbubble.com/portfolio", timeout=60000)
+        print("🔑 Logged into Redbubble")
+
+        # 2) Go to new upload page
         page.goto("https://www.redbubble.com/portfolio/images/new")
-        page.wait_for_selector('input[type="file"]')
-        
-        for image_path in image_paths:
-            print(f"กำลังอัปโหลด {image_path}...")
-            page.set_input_files('input[type="file"]', image_path)
-            page.fill('#work_title', UPLOAD_TITLE)
-            page.click('#submit_button')
-            page.wait_for_selector('text=Your design has been published', timeout=15000)
-        
-        print("อัปโหลดเสร็จสิ้น!")
+        page.wait_for_selector('input[type="file"]', timeout=30000)
+
+        for img in image_paths:
+            print(f"🚀 Uploading {img.name}…")
+            # upload file
+            page.set_input_files('input[type="file"]', str(img))
+            # fill title/description
+            title = img.stem.replace("-", " ").capitalize()
+            page.fill('input[name="title"]', title)
+            # submit
+            page.click('button:has-text("Save & Continue")')
+            # wait for confirmation
+            page.wait_for_selector('text=Your design has been published', timeout=60000)
+            print(f"✅ Uploaded {img.name}")
+            time.sleep(2)
+
         browser.close()
 
+# ——— MAIN ———
 def main():
-    prompt = "A futuristic cyberpunk city at night, vibrant and neon-lit."
-    image_paths = generate_images(prompt, num_images=1)
-    
-    if image_paths:
-        upload_to_redbubble(image_paths)
-    else:
-        print("Error: ไม่สามารถสร้างภาพได้")
-        exit(1)
+    all_designs = []
+    for prompt in PROMPTS:
+        designs = generate_images_deepai(prompt, n=1)
+        all_designs.extend(designs)
+    if not all_designs:
+        raise RuntimeError("No designs generated, aborting")
+    upload_to_redbubble(all_designs)
 
 if __name__ == "__main__":
     main()

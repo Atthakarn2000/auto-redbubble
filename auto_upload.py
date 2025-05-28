@@ -2,14 +2,21 @@ import os
 import time
 import uuid
 import requests
-import replicate
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 # โหลดค่าจาก Environment Variables
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
 RB_EMAIL = os.getenv("RB_EMAIL")
 RB_PASS = os.getenv("RB_PASS")
+
+# ตรวจสอบว่าตัวแปรจำเป็นถูกตั้งค่าหรือไม่
+if not DEEPAI_API_KEY:
+    print("Error: โปรดตั้งค่า DEEPAI_API_KEY ใน environment variables")
+    exit(1)
+if not RB_EMAIL or not RB_PASS:
+    print("Error: โปรดตั้งค่า RB_EMAIL และ RB_PASS ใน environment variables")
+    exit(1)
 
 # ค่าคงที่
 UPLOAD_TITLE = "AI-Generated Artwork"
@@ -18,44 +25,50 @@ DESIGN_FOLDER.mkdir(exist_ok=True)
 
 def generate_images(prompt, num_images=1):
     """
-    สร้างภาพ AI ผ่าน Replicate พร้อมดาวน์โหลดไปยังเครื่อง
+    สร้างภาพด้วย DeepAI Text-to-Image API 
+    แล้วดาวน์โหลดและบันทึกไฟล์ไว้ในโฟลเดอร์ 'designs/'
     """
-    # แก้ไขส่วนนี้: เปลี่ยน <VALID_VERSION_ID> เป็น version id ที่ถูกต้อง
-    model = "stability-ai/stable-diffusion:<VALID_VERSION_ID>"
-    params = {
-        "prompt": prompt,
-        "width": 512,
-        "height": 512,
-        "num_inference_steps": 30
-    }
+    api_url = "https://api.deepai.org/api/text2img"
+    headers = {"api-key": DEEPAI_API_KEY}
     
-    try:
-        client = replicate.Client(api_token=REPLICATE_API_TOKEN)
-        output_urls = client.run(model, input=params)
+    image_paths = []
+    
+    for i in range(num_images):
+        data = {"text": prompt}
+        print("กำลังส่งคำขอสร้างภาพไปยัง DeepAI ...")
+        response = requests.post(api_url, data=data, headers=headers)
         
-        image_paths = []
-        for url in output_urls[:num_images]:
-            image_uuid = f"{uuid.uuid4()}.png"
-            image_path = DESIGN_FOLDER / image_uuid
-            response = requests.get(url)
-            response.raise_for_status()
+        if response.status_code != 200:
+            print(f"Error generating image: {response.status_code} {response.text}")
+            exit(1)
+        
+        result = response.json()
+        image_url = result.get("output_url")
+        if not image_url:
+            print("Error: ไม่พบข้อมูล output_url ในผลลัพธ์")
+            exit(1)
             
-            with open(image_path, "wb") as img_file:
-                img_file.write(response.content)
-            
-            image_paths.append(str(image_path))
-            print(f"ดาวน์โหลดภาพสำเร็จ: {image_path}")
-        return image_paths
-    except requests.RequestException as e:
-        print(f"Error downloading images: {e}")
-        exit(1)
-    except Exception as ex:
-        print(f"Error generating images: {ex}")
-        exit(1)
+        # ดาวน์โหลดภาพจาก image_url
+        img_response = requests.get(image_url)
+        img_response.raise_for_status()
+        
+        image_uuid = f"{uuid.uuid4()}.png"
+        image_path = DESIGN_FOLDER / image_uuid
+        
+        with open(image_path, "wb") as img_file:
+            img_file.write(img_response.content)
+        
+        image_paths.append(str(image_path))
+        print(f"ดาวน์โหลดภาพสำเร็จ: {image_path}")
+        
+        time.sleep(1)  # รอเล็กน้อยก่อนรอบถัดไป (หากมี)
+    
+    return image_paths
 
 def upload_to_redbubble(image_paths):
     """
     อัปโหลดภาพไปยัง Redbubble ผ่าน Playwright
+    โดยเข้าสู่ระบบและอัปโหลดทีละภาพ
     """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

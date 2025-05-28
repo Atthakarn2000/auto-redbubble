@@ -29,7 +29,7 @@ def generate_images_deepai(prompt: str, n: int = 1) -> list[Path]:
         resp = requests.post(
             "https://api.deepai.org/api/text2img",
             data={"text": prompt},
-            headers={"api-key": DEEPAI_API_KEY},
+            headers={"Api-Key": DEEPAI_API_KEY},
             timeout=120
         )
         if resp.status_code != 200:

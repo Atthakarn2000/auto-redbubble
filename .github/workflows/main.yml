@@ -1,4 +1,3 @@
-# .github/workflows/main.yml
 name: Auto Redbubble Upload
 
 on:
@@ -8,7 +7,7 @@ jobs:
   upload:
     runs-on: ubuntu-latest
 
-    steps:                           # ← ตรงนี้ต้องเลื่อนเข้าไป 2 ช่องว่าง
+    steps:
       - uses: actions/checkout@v4
 
       - name: Setup Python
@@ -24,7 +23,7 @@ jobs:
 
       - name: Auto-upload script
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          RB_EMAIL:         ${{ secrets.RB_EMAIL }}
-          RB_PASS:          ${{ secrets.RB_PASS }}
+          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          RB_EMAIL:        ${{ secrets.RB_EMAIL }}
+          RB_PASS:         ${{ secrets.RB_PASS }}
         run: python auto_upload.py

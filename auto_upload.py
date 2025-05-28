@@ -1,86 +1,106 @@
-import os, sys, time, requests
-from io import BytesIO
-from PIL import Image
-from playwright.sync_api import sync_playwright
+import os
+import time
 import openai
-from huggingface_hub import InferenceApi
+import requests
+from playwright.sync_api import sync_playwright
 
-# ─── Config ──────────────────────────────────────────────────
-openai.api_key   = os.getenv("OPENAI_API_KEY")
-HF_API_TOKEN     = os.getenv("HF_API_TOKEN")
-RB_EMAIL, RB_PASS = os.getenv("RB_EMAIL"), os.getenv("RB_PASS")
+# Load environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+RB_EMAIL = os.getenv("RB_EMAIL")
+RB_PASS = os.getenv("RB_PASS")
 
-if not all([openai.api_key, HF_API_TOKEN, RB_EMAIL, RB_PASS]):
-    print("❌ Missing one of OPENAI_API_KEY, HF_API_TOKEN, RB_EMAIL, RB_PASS")
-    sys.exit(1)
+# OpenAI API setup
+openai.api_key = OPENAI_API_KEY
+openai.api_type = "openai"
+openai.api_base = "https://api.openai.com/v1"
 
-PROMPT = "Minimalist cartoon cat T-shirt design, flat style, transparent background"
+# Hugging Face API setup
+HF_HEADERS = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+SD_MODEL_ID = "stabilityai/stable-diffusion-2-base"
+UPSCALE_MODEL_ID = "stabilityai/stable-diffusion-x4-upscaler"
 
-# ─── 1) Generate 1024×1024 via OpenAI DALL·E ────────────────────
-def gen_image_openai(prompt):
-    print(f"🚀 Generating at 1024×1024: “{prompt}”")
-    resp = openai.Image.create(
-        prompt=prompt, n=1, size="1024x1024", response_format="url"
-    )
-    url = resp["data"][0]["url"]
-    data = requests.get(url).content
-    return Image.open(BytesIO(data)).convert("RGBA")
+def gen_with_openai():
+    """Generate an image with OpenAI DALL·E."""
+    try:
+        response = openai.Image.create(
+            model="dall-e",
+            prompt="A stunning landscape painting in digital art style.",
+            size="1024x1024"
+        )
+        return response["data"][0]["url"]
+    except Exception as e:
+        print(f"OpenAI image generation failed: {e}")
+        return None
 
-# ─── 2) Upscale เป็น 4500×5400 ด้วย HF Upscaler ───────────────
-def upscale_hf(img: Image.Image) -> Image.Image:
-    print("🖼 Upscaling via HF x4 upscaler…")
-    # Model: stabilityai/stable-diffusion-xl-upscaler หรือ ตัว x4
-    api = InferenceApi(
-        repo_id="stabilityai/stable-diffusion-x4-upscaler",
-        token=HF_API_TOKEN
-    )
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    out = api(inputs=buf.getvalue())
-    up_url = out["images"][0]
-    data = requests.get(up_url).content
-    return Image.open(BytesIO(data)).convert("RGBA")
+def gen_with_hf():
+    """Generate an image with Hugging Face Stable Diffusion."""
+    url = f"https://api-inference.huggingface.co/models/{SD_MODEL_ID}"
+    payload = {"inputs": "A stunning landscape painting in digital art style."}
+    try:
+        response = requests.post(url, headers=HF_HEADERS, json=payload)
+        response.raise_for_status()
+        return response.content  # Image binary
+    except requests.RequestException as e:
+        print(f"Hugging Face image generation failed: {e}")
+        return None
 
-# ─── 3) Upload to Redbubble via Playwright ─────────────────────
-def upload_redbubble(img: Image.Image, title="My AI T-shirt"):
-    print("🔐 Logging into Redbubble…")
+def upscale_with_hf(image):
+    """Upscale an image using Hugging Face stable-diffusion-x4-upscaler."""
+    url = f"https://api-inference.huggingface.co/models/{UPSCALE_MODEL_ID}"
+    try:
+        response = requests.post(url, headers=HF_HEADERS, files={"file": image})
+        response.raise_for_status()
+        return response.content  # Upscaled image binary
+    except requests.RequestException as e:
+        print(f"Upscaling failed: {e}")
+        return None
+
+def upload_to_redbubble(image_path):
+    """Automate the Redbubble upload process using Playwright."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto("https://www.redbubble.com/auth/login", timeout=60000)
-        page.fill('input[name="login"]', RB_EMAIL)
+        
+        print("Logging into Redbubble...")
+        page.goto("https://www.redbubble.com/auth/login")
+        page.fill('input[name="email"]', RB_EMAIL)
         page.fill('input[name="password"]', RB_PASS)
         page.click('button[type="submit"]')
-        page.wait_for_url("https://www.redbubble.com/portfolio", timeout=20000)
+        time.sleep(5)  # Allow time for login
 
-        print("⬆️ Navigating to New Work…")
-        page.goto("https://www.redbubble.com/portfolio/images/new", timeout=60000)
+        print("Navigating to upload page...")
+        page.goto("https://www.redbubble.com/portfolio/manage_works/new")
+        time.sleep(3)
 
-        print("📤 Uploading image…")
-        # เตรียม BytesIO
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
-        page.set_input_files('input[type="file"]', buf.read())
+        print("Uploading image...")
+        page.set_input_files('input[type="file"]', image_path)
+        time.sleep(5)
 
-        # ใส่ Title
-        page.fill('input[name="title"]', title)
-        # (เพิ่มเติม) ใส่ Tags / Description ถ้าต้องการ
-        page.click('button[type="submit"]')
-        page.wait_for_selector('.work-page-url', timeout=30000)
-        link = page.locator('.work-page-url').get_attribute("href")
-        print("✅ Done! URL:", link)
+        print("Setting metadata...")
+        page.fill('#work_title', "Generated Art Design")
+        page.fill('#work_description', "A beautiful AI-generated artwork.")
+        page.fill('#work_tags', "AI, Digital Art, Landscape, Cool")
+
+        print("Publishing design...")
+        page.click('#submit_button')
+        time.sleep(5)
+
+        print("Upload complete!")
         browser.close()
 
-# ─── Main Script ───────────────────────────────────────────────
 def main():
-    try:
-        img1024 = gen_image_openai(PROMPT)
-        img_hi = upscale_hf(img1024)
-        upload_redbubble(img_hi, title="Minimalist Cat Design")
-    except Exception as e:
-        print("❌ Error:", e)
-        sys.exit(1)
+    image = gen_with_openai() or gen_with_hf()
+    if image:
+        upscaled_image = upscale_with_hf(image) if image else None
+        final_image = upscaled_image or image
+        image_path = "generated_image.png"
+        with open(image_path, "wb") as f:
+            f.write(final_image)
+
+        upload_to_redbubble(image_path)
+    else:
+        print("Failed to generate an image.")
 
 if __name__ == "__main__":
     main()

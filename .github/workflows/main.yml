@@ -1,25 +1,28 @@
+# .github/workflows/main.yml
 name: Auto Redbubble Upload
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  upload:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-      - name: Install dependencies
+        with: python-version: '3.x'
+
+      - name: Install deps
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           playwright install --with-deps
-      - name: Run auto-upload
+
+      - name: Auto-upload script
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          RB_EMAIL:        ${{ secrets.RB_EMAIL }}
-          RB_PASS:         ${{ secrets.RB_PASS }}
+          RB_EMAIL:         ${{ secrets.RB_EMAIL }}
+          RB_PASS:          ${{ secrets.RB_PASS }}
         run: python auto_upload.py

@@ -17,14 +17,9 @@ DESIGN_FOLDER = Path("designs")
 DESIGN_FOLDER.mkdir(exist_ok=True)
 
 def generate_images(prompt, num_images=1):
-    """สร้างภาพโดยใช้ Replicate Stable Diffusion และดาวน์โหลดไปยังเครื่อง"""
+    """สร้างภาพ AI ผ่าน Replicate และดาวน์โหลดไปยังเครื่อง"""
     model = "stability-ai/stable-diffusion"
-    params = {
-        "prompt": prompt,
-        "width": 512,
-        "height": 512,
-        "num_inference_steps": 30
-    }
+    params = {"prompt": prompt, "width": 512, "height": 512, "num_inference_steps": 30}
     
     try:
         client = replicate.Client(api_token=REPLICATE_API_TOKEN)
@@ -41,7 +36,7 @@ def generate_images(prompt, num_images=1):
                 img_file.write(response.content)
             
             image_paths.append(str(image_path))
-            print(f"Downloaded image: {image_path}")
+            print(f"ดาวน์โหลดภาพสำเร็จ: {image_path}")
         return image_paths
     except requests.RequestException as e:
         print(f"Error downloading images: {e}")
@@ -53,7 +48,7 @@ def upload_to_redbubble(image_paths):
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
-        print("Logging into Redbubble...")
+        print("เข้าสู่ระบบ Redbubble...")
         page.goto("https://www.redbubble.com/auth/login")
         page.fill('input[name="email"]', RB_EMAIL)
         page.fill('input[name="password"]', RB_PASS)
@@ -64,13 +59,13 @@ def upload_to_redbubble(image_paths):
         page.wait_for_selector('input[type="file"]')
 
         for image_path in image_paths:
-            print(f"Uploading {image_path}...")
+            print(f"กำลังอัปโหลด {image_path}...")
             page.set_input_files('input[type="file"]', image_path)
             page.fill('#work_title', UPLOAD_TITLE)
             page.click('#submit_button')
             page.wait_for_selector('text=Your design has been published', timeout=15000)
 
-        print("Upload complete!")
+        print("อัปโหลดเสร็จสิ้น!")
         browser.close()
 
 def main():
@@ -80,7 +75,7 @@ def main():
     if image_paths:
         upload_to_redbubble(image_paths)
     else:
-        print("Failed to generate images.")
+        print("Error: ไม่สามารถสร้างภาพได้")
         exit(1)
 
 if __name__ == "__main__":

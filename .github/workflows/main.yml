@@ -6,24 +6,26 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install --with-deps
+          # ติดตั้ง browser binaries ให้ Playwright
+          npx playwright install-deps
+          npx playwright install
 
-      - name: Auto-upload script
+      - name: Run auto-upload
         env:
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HF_API_TOKEN:    ${{ secrets.HF_API_TOKEN }}
           RB_EMAIL:        ${{ secrets.RB_EMAIL }}
           RB_PASS:         ${{ secrets.RB_PASS }}
         run: python auto_upload.py

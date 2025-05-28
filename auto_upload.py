@@ -5,7 +5,8 @@ from io import BytesIO
 from playwright.sync_api import sync_playwright
 
 # — CONFIGURATION —
-openai.api_key = os.getenv("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")
+git add auto_upload.py
+git commit -m "chore: remove hard-coded OpenAI key"
 RB_EMAIL        = os.getenv("ozonena2543@gmail.com")
 RB_PASS         = os.getenv("Ozone_190743")
 

@@ -29,7 +29,8 @@ def generate_images(prompt, num_images=1):
     แล้วดาวน์โหลดและบันทึกไฟล์ไว้ในโฟลเดอร์ 'designs/'
     """
     api_url = "https://api.deepai.org/api/text2img"
-    headers = {"api-key": DEEPAI_API_KEY}
+    # เปลี่ยน header key เป็น "Api-Key" ให้ตรงกับที่ DeepAI ระบุ
+    headers = {"Api-Key": DEEPAI_API_KEY}
     
     image_paths = []
     

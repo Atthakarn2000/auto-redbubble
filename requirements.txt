@@ -1,4 +1,3 @@
-replicate
-playwright
 requests
+playwright
 pillow

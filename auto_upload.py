@@ -6,18 +6,18 @@ import replicate
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# Load environment variables
+# โหลดตัวแปรจาก Environment Variables
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 RB_EMAIL = os.getenv("RB_EMAIL")
 RB_PASS = os.getenv("RB_PASS")
 
-# Constants
+# ค่าคงที่
 UPLOAD_TITLE = "AI-Generated Artwork"
 DESIGN_FOLDER = Path("designs")
 DESIGN_FOLDER.mkdir(exist_ok=True)
 
 def generate_images(prompt, num_images=1):
-    """Generate images using Replicate's Stable Diffusion."""
+    """สร้างภาพโดยใช้ Replicate Stable Diffusion และดาวน์โหลดไปยังเครื่อง"""
     model = "stability-ai/stable-diffusion"
     params = {
         "prompt": prompt,
@@ -27,8 +27,8 @@ def generate_images(prompt, num_images=1):
     }
     
     try:
-        replicate.Client(api_token=REPLICATE_API_TOKEN)
-        output_urls = replicate.run(model, input=params)
+        client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+        output_urls = client.run(model, input=params)
         
         image_paths = []
         for url in output_urls[:num_images]:
@@ -48,7 +48,7 @@ def generate_images(prompt, num_images=1):
         exit(1)
 
 def upload_to_redbubble(image_paths):
-    """Automate image upload on Redbubble using Playwright."""
+    """อัปโหลดภาพไปยัง Redbubble ผ่าน Playwright"""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()

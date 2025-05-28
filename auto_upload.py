@@ -5,31 +5,25 @@ import requests
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# โหลดค่าจาก Environment Variables
-DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
-RB_EMAIL = os.getenv("RB_EMAIL")
-RB_PASS = os.getenv("RB_PASS")
+# ตั้งค่า API Key จาก DeepAI (โปรดตรวจสอบว่าคีย์นี้เป็นของคุณจริง)
+DEEPAI_API_KEY = "2bf13735-62a2-49c9-82e4-062d0115aca6"
 
-# ตรวจสอบว่าตัวแปรจำเป็นถูกตั้งค่าหรือไม่
-if not DEEPAI_API_KEY:
-    print("Error: โปรดตั้งค่า DEEPAI_API_KEY ใน environment variables")
-    exit(1)
-if not RB_EMAIL or not RB_PASS:
-    print("Error: โปรดตั้งค่า RB_EMAIL และ RB_PASS ใน environment variables")
-    exit(1)
+# สำหรับบัญชี Redbubble ให้ตั้งค่าข้อมูลของคุณลงไป (หรือสามารถนำมาใช้ environment variables ได้)
+RB_EMAIL = os.getenv("RB_EMAIL") or "your_redbubble_email@example.com"
+RB_PASS  = os.getenv("RB_PASS")  or "your_redbubble_password"
 
-# ค่าคงที่
+# ค่าคงที่สำหรับงานอัปโหลด
 UPLOAD_TITLE = "AI-Generated Artwork"
 DESIGN_FOLDER = Path("designs")
 DESIGN_FOLDER.mkdir(exist_ok=True)
 
 def generate_images(prompt, num_images=1):
     """
-    สร้างภาพด้วย DeepAI Text-to-Image API 
-    แล้วดาวน์โหลดและบันทึกไฟล์ไว้ในโฟลเดอร์ 'designs/'
+    สร้างภาพโดยใช้ DeepAI Text-to-Image API
+    แล้วดาวน์โหลดและบันทึกไฟล์ภาพในโฟลเดอร์ 'designs/'
     """
     api_url = "https://api.deepai.org/api/text2img"
-    # เปลี่ยน header key เป็น "Api-Key" ให้ตรงกับที่ DeepAI ระบุ
+    # เปลี่ยนชื่อ header ให้ถูกต้องเป็น "Api-Key"
     headers = {"Api-Key": DEEPAI_API_KEY}
     
     image_paths = []
@@ -48,8 +42,8 @@ def generate_images(prompt, num_images=1):
         if not image_url:
             print("Error: ไม่พบข้อมูล output_url ในผลลัพธ์")
             exit(1)
-            
-        # ดาวน์โหลดภาพจาก image_url
+        
+        # ดาวน์โหลดภาพจาก URL ที่ได้
         img_response = requests.get(image_url)
         img_response.raise_for_status()
         
@@ -62,14 +56,14 @@ def generate_images(prompt, num_images=1):
         image_paths.append(str(image_path))
         print(f"ดาวน์โหลดภาพสำเร็จ: {image_path}")
         
-        time.sleep(1)  # รอเล็กน้อยก่อนรอบถัดไป (หากมี)
+        # รอเล็กน้อยก่อนทำงานในรอบต่อไป (ถ้ามี)
+        time.sleep(1)
     
     return image_paths
 
 def upload_to_redbubble(image_paths):
     """
-    อัปโหลดภาพไปยัง Redbubble ผ่าน Playwright
-    โดยเข้าสู่ระบบและอัปโหลดทีละภาพ
+    อัปโหลดภาพไปยัง Redbubble โดยใช้ Playwright จำลองเบราว์เซอร์
     """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

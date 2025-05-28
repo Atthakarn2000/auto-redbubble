@@ -1,28 +1,31 @@
-name: Auto Redbubble Upload
+name: Auto Upload Artwork
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  upload:
+  run_script:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    env:
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      RB_EMAIL: ${{ secrets.RB_EMAIL }}
+      RB_PASS: ${{ secrets.RB_PASS }}
 
-      - name: Setup Python
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.x"
+          python-version: '3.x'
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
           playwright install --with-deps
 
-      - name: Auto-upload script
-        env:
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          RB_EMAIL:              ${{ secrets.RB_EMAIL }}
-          RB_PASS:               ${{ secrets.RB_PASS }}
+      - name: Run auto_upload.py
         run: python auto_upload.py

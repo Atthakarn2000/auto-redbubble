@@ -2,34 +2,24 @@ name: Auto Redbubble Upload
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * *'  # ทุกวัน 10:00 BKK (03:00 UTC)
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-
+          python-version: '3.x'
       - name: Install dependencies
         run: |
-          python -m venv venv
-          source venv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install playwright
           playwright install --with-deps
-
-      - name: Run upload script
+      - name: Run auto-upload
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          RB_EMAIL       : ${{ secrets.RB_EMAIL }}
-          RB_PASS        : ${{ secrets.RB_PASS }}
-        run: |
-          source venv/bin/activate
-          python auto_upload.py
+          RB_EMAIL:        ${{ secrets.RB_EMAIL }}
+          RB_PASS:         ${{ secrets.RB_PASS }}
+        run: python auto_upload.py

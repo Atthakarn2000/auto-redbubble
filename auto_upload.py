@@ -1,71 +1,87 @@
-import os, time, uuid, requests
-from PIL import Image
-from io import BytesIO
-from playwright.sync_api import sync_playwright
+import os
+import time
+import uuid
+import requests
 import replicate
+from pathlib import Path
+from playwright.sync_api import sync_playwright
 
-# ─ CONFIG ─────────────────────────────────────────────────────
-REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-RB_EMAIL       = os.getenv("RB_EMAIL")
-RB_PASS        = os.getenv("RB_PASS")
-DESIGNS_DIR    = "designs"        # โฟลเดอร์เก็บรูปก่อนอัป
-UPLOAD_TITLE   = "My AI T-shirt"  # ปรับได้ตามชอบ
-PROMPT         = "Minimalist cat T-shirt design, transparent background"
+# Load environment variables
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+RB_EMAIL = os.getenv("RB_EMAIL")
+RB_PASS = os.getenv("RB_PASS")
 
-if not REPLICATE_TOKEN:
-    raise RuntimeError("❌ REPLICATE_API_TOKEN not set")
-if not RB_EMAIL or not RB_PASS:
-    raise RuntimeError("❌ RB_EMAIL/RB_PASS not set")
+# Constants
+UPLOAD_TITLE = "AI-Generated Artwork"
+DESIGN_FOLDER = Path("designs")
+DESIGN_FOLDER.mkdir(exist_ok=True)
 
-# ─ STEP 1: Generate image(s) via Replicate ────────────────────
-def gen_images(prompt, n=1):
-    os.makedirs(DESIGNS_DIR, exist_ok=True)
-    model = replicate.models.get("stability-ai/stable-diffusion")
-    outputs = model.predict(
-        prompt=prompt,
-        width=512, height=512,
-        num_inference_steps=30,
-        api_token=REPLICATE_TOKEN
-    )
-    saved = []
-    for i, url in enumerate(outputs):
-        r = requests.get(url); r.raise_for_status()
-        path = os.path.join(DESIGNS_DIR, f"{uuid.uuid4().hex}.png")
-        with open(path, "wb") as f: f.write(r.content)
-        saved.append(path)
-        print(f"✅ Saved {path}")
-    return saved
+def generate_images(prompt, num_images=1):
+    """Generate images using Replicate's Stable Diffusion."""
+    model = "stability-ai/stable-diffusion"
+    params = {
+        "prompt": prompt,
+        "width": 512,
+        "height": 512,
+        "num_inference_steps": 30
+    }
+    
+    try:
+        replicate.Client(api_token=REPLICATE_API_TOKEN)
+        output_urls = replicate.run(model, input=params)
+        
+        image_paths = []
+        for url in output_urls[:num_images]:
+            image_uuid = f"{uuid.uuid4()}.png"
+            image_path = DESIGN_FOLDER / image_uuid
+            response = requests.get(url)
+            response.raise_for_status()
+            
+            with open(image_path, "wb") as img_file:
+                img_file.write(response.content)
+            
+            image_paths.append(str(image_path))
+            print(f"Downloaded image: {image_path}")
+        return image_paths
+    except requests.RequestException as e:
+        print(f"Error downloading images: {e}")
+        exit(1)
 
-# ─ STEP 2: Upload to Redbubble via Playwright ─────────────────
 def upload_to_redbubble(image_paths):
+    """Automate image upload on Redbubble using Playwright."""
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        # 2.1 Login
+        
+        print("Logging into Redbubble...")
         page.goto("https://www.redbubble.com/auth/login")
-        page.fill('input[type="email"]', RB_EMAIL)
-        page.fill('input[type="password"]', RB_PASS)
+        page.fill('input[name="email"]', RB_EMAIL)
+        page.fill('input[name="password"]', RB_PASS)
         page.click('button[type="submit"]')
-        page.wait_for_url("https://www.redbubble.com/portfolio", timeout=15000)
-        # 2.2 ไปหน้าอัพโหลดงานใหม่
+        page.wait_for_selector('text=Dashboard', timeout=10000)
+
         page.goto("https://www.redbubble.com/portfolio/images/new")
-        for img in image_paths:
-            print(f"🚀 Uploading {img}")
-            page.set_input_files('input[type="file"]', img)
-            page.wait_for_selector('text="Title"', timeout=10000)
-            page.fill('input[name="title"]', UPLOAD_TITLE)
-            page.click('button:has-text("Save & Continue")')
-            page.wait_for_selector('text="Your design has been published"', timeout=20000)
-            print("✅ Uploaded!")
+        page.wait_for_selector('input[type="file"]')
+
+        for image_path in image_paths:
+            print(f"Uploading {image_path}...")
+            page.set_input_files('input[type="file"]', image_path)
+            page.fill('#work_title', UPLOAD_TITLE)
+            page.click('#submit_button')
+            page.wait_for_selector('text=Your design has been published', timeout=15000)
+
+        print("Upload complete!")
         browser.close()
 
-# ─ MAIN ───────────────────────────────────────────────────────
 def main():
-    print("🔧 Generating images…")
-    imgs = gen_images(PROMPT, n=1)
-    print("🔧 Uploading to Redbubble…")
-    upload_to_redbubble(imgs)
-    print("🎉 All done!")
+    prompt = "A futuristic cyberpunk city at night, vibrant and neon-lit."
+    image_paths = generate_images(prompt, num_images=1)
+    
+    if image_paths:
+        upload_to_redbubble(image_paths)
+    else:
+        print("Failed to generate images.")
+        exit(1)
 
 if __name__ == "__main__":
     main()
